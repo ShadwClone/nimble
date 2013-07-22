@@ -102,7 +102,6 @@ struct DeviceState
 list<DeviceState> deviceStateList;
 HDSchedulerHandle deviceStateHandle = NULL;
 
-
 // Function prototypes
 void glutDisplay(void);
 void glutReshape(int width, int height);
@@ -141,7 +140,7 @@ int main(int argc, char *argv[])
   // initialize window and center it
   glutInitWindowSize(800,600);
   glutInitWindowPosition((screenWidth-800)/2,(screenHeight-600)/2);
-  glutCreateWindow("Haptic Learning Center");
+  glutCreateWindow("Nimble");
 
   // load pattern
   getPatternSelection();
@@ -153,7 +152,6 @@ int main(int argc, char *argv[])
   glutDisplayFunc(glutDisplay);
   glutReshapeFunc(glutReshape);
   glutIdleFunc(glutIdle);
-
   
   atexit(exitHandler); // Provide a cleanup routine for application exit.
   initScene(); // Initializes OpenGL and Haptic scenes
@@ -180,7 +178,7 @@ void writeDeviceStatesToFile()
   ostringstream fileName;
   time_t rawtime = time(NULL);
   tm *timeInfo = localtime(&rawtime);
-  string fileDir("output/");
+  string fileDir("output/"); // TODO: have user selectable, create if needed
 
   fileName << timeInfo->tm_year+1900
            << setfill('0') << setw(2) << timeInfo->tm_mon+1 
@@ -197,12 +195,12 @@ void writeDeviceStatesToFile()
 
     dsFile << "%YAML 1.2" << endl
            << "---" << endl
-           << "date: " << endl //TODO: date
-           << "location: " << endl
-           << "patient-id: " << endl; //TODO: patient ID
+           << "patient-id: " << endl //TODO: patient ID
+           << "date: " << asctime(timeInfo) << endl //TODO: format to canonical YAML timestamp
+           << "location: " << endl;
 
     dsFile << "pattern: " << endl
-           << "    type: ";
+           << "  type: ";
 
     if(menuSelection < 4)
       dsFile << "complexity" << endl;
@@ -211,7 +209,7 @@ void writeDeviceStatesToFile()
     else if(menuSelection < 10)
       dsFile << "width" << endl;
 
-    dsFile << "    level: ";
+    dsFile << "  level: ";
 
     if(menuSelection%3 == 1)
       dsFile << "1" << endl;
@@ -314,14 +312,8 @@ void glutIdle()
   HLerror error;
 
   while (HL_ERROR(error = hlGetError()))
-  {
-    //fprintf(stderr, "HL Error: %s\n", error.errorCode);
-
     if(error.errorCode == HL_DEVICE_ERROR)
-    {
       hduPrintError(stderr, &error.errorInfo,"Error during haptic rendering\n");
-    }
-  }
 
   glutPostRedisplay();
 }
@@ -332,30 +324,30 @@ void glutIdle()
 *******************************************************************************/
 void initGL()
 {
-    static const GLfloat light_model_ambient[] = {0.3f, 0.3f, 0.3f, 1.0f};
-    static const GLfloat light0_diffuse[] = {0.9f, 0.9f, 0.9f, 0.9f};   
-    static const GLfloat light0_direction[] = {0.0f, -0.4f, 1.0f, 0.0f};    
+  static const GLfloat light_model_ambient[] = {0.3f, 0.3f, 0.3f, 1.0f};
+  static const GLfloat light0_diffuse[] = {0.9f, 0.9f, 0.9f, 0.9f};   
+  static const GLfloat light0_direction[] = {0.0f, -0.4f, 1.0f, 0.0f};    
     
-    // Enable depth buffering for hidden surface removal.
-    glDepthFunc(GL_LEQUAL);
-    glEnable(GL_DEPTH_TEST);
+  // Enable depth buffering for hidden surface removal.
+  glDepthFunc(GL_LEQUAL);
+  glEnable(GL_DEPTH_TEST);
     
-    // Cull back faces.
-    glCullFace(GL_BACK);
-    glEnable(GL_CULL_FACE);
+  // Cull back faces.
+  glCullFace(GL_BACK);
+  glEnable(GL_CULL_FACE);
     
-    // Setup other misc features.
-    glEnable(GL_LIGHTING);
-    glEnable(GL_NORMALIZE);
-    glShadeModel(GL_SMOOTH);
+  // Setup other misc features.
+  glEnable(GL_LIGHTING);
+  glEnable(GL_NORMALIZE);
+  glShadeModel(GL_SMOOTH);
     
-    // Setup lighting model.
-    glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_FALSE);
-    glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_FALSE);    
-    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, light_model_ambient);
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_diffuse);
-    glLightfv(GL_LIGHT0, GL_POSITION, light0_direction);
-    glEnable(GL_LIGHT0);   
+  // Setup lighting model.
+  glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_FALSE);
+  glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_FALSE);    
+  glLightModelfv(GL_LIGHT_MODEL_AMBIENT, light_model_ambient);
+  glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_diffuse);
+  glLightfv(GL_LIGHT0, GL_POSITION, light0_direction);
+  glEnable(GL_LIGHT0);   
 }
 
 
@@ -379,8 +371,7 @@ void HLCALLBACK computeForceCB(HDdouble force[3], HLcache *cache, void *userdata
 
   hlCacheGetDoublev(cache, HL_PROXY_POSITION, proxyPos);
 
-  // Compute the inertia force based on pulling the point mass around
-  // by a spring.
+  // Compute inertial force based on pulling the point mass around by a spring.
   hduVector3Dd springForce = pPointMass->m_kStiffness * (proxyPos - pPointMass->m_position);
   hduVector3Dd damperForce = -pPointMass->m_kDamping * pPointMass->m_velocity;
   hduVector3Dd inertiaForce = springForce + damperForce;
@@ -390,8 +381,7 @@ void HLCALLBACK computeForceCB(HDdouble force[3], HLcache *cache, void *userdata
   pPointMass->m_velocity += acceleration * deltaT;    
   pPointMass->m_position += pPointMass->m_velocity * deltaT;
                                    
-  // Gravity well starts here
-  //hduVector3Dd position;
+  // gravity well-------------------------------------------------------
   hdGetDoublev(HD_CURRENT_POSITION,position);
   hduVector3Dd gravityWellCenter(0.0,0.0,0.0); //coord doesn't work yet
   const float k = k_damping;
@@ -400,7 +390,7 @@ void HLCALLBACK computeForceCB(HDdouble force[3], HLcache *cache, void *userdata
   force[0] += forceVector[0];
   force[1] += forceVector[1];
   force[2] += forceVector[2];
-  // gravity well ends here
+  // gravity well--------------------------------------------------------
 
   // Send the opposing force to the device.
   force[0] += -inertiaForce[0];
@@ -414,7 +404,7 @@ void HLCALLBACK computeForceCB(HDdouble force[3], HLcache *cache, void *userdata
 *******************************************************************************/
 void HLCALLBACK startEffectCB(HLcache *cache, void *userdata)
 {
-  PointMass *pPointMass = (PointMass *) userdata;
+  PointMass *pPointMass = static_cast<PointMass *>(userdata);
     
   fprintf(stdout, "Custom effect started\n");
 
@@ -452,7 +442,7 @@ void initPointMass(PointMass *pPointMass)
 
 
 /*******************************************************************************
- ANN: Servo loop thread callback called when the effect is stopped.
+ ANN: Servo loop thread callback for recording device states.
 *******************************************************************************/
 HDCallbackCode HDCALLBACK DeviceStateCallback(void *pUserData)
 {
@@ -637,18 +627,18 @@ void getPatternSelection()
 {
   cout << endl
        << "-----------------------------------------------" << endl
-       << "Haptic Testing Menu" << endl
+       << "Nimble Testing Menu" << endl
        << "===============================================" << endl
-       << endl
-       << "Complexity:" << endl 
-       << " [1] Level 1" << endl
-       << " [2] Level 2" << endl
-       << " [3] Level 3" << endl
-       << endl 
-       << "Straight to Curvy:" << endl 
-       << " [4] Level 1" << endl
-       << " [5] Level 2" << endl
-       << " [6] Level 3" << endl
+       //<< endl
+       //<< "Complexity:" << endl 
+       //<< " [1] Level 1" << endl
+       //<< " [2] Level 2" << endl
+       //<< " [3] Level 3" << endl
+       //<< endl 
+       //<< "Straight to Curvy:" << endl 
+       //<< " [4] Level 1" << endl
+       //<< " [5] Level 2" << endl
+       //<< " [6] Level 3" << endl
        << endl 
        << "Width:" << endl 
        << " [7] Level 1" << endl
@@ -759,15 +749,17 @@ void drawSceneGraphics()
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
+  float x = 2, y = x*0.75;//set pattern size at 4:3 ratio
+
   glBegin(GL_QUADS);
     glTexCoord2f(0,0);
-    glVertex2f(-1,-1);
+    glVertex2f(-x,-y);
     glTexCoord2f(1,0);
-    glVertex2f( 1,-1);
+    glVertex2f( x,-y);
     glTexCoord2f(1,1);
-    glVertex2f( 1, 1);
+    glVertex2f( x, y);
     glTexCoord2f(0,1);
-    glVertex2f(-1, 1);
+    glVertex2f(-x, y);
   glEnd();
 
   glPopMatrix();
@@ -790,10 +782,10 @@ void drawSceneHaptics()
   drawCursor_Air();
 
   // Set material properties for the shapes to be drawn
-  hlMaterialf(HL_FRONT_AND_BACK, HL_STIFFNESS, 0.7f);
-  hlMaterialf(HL_FRONT_AND_BACK, HL_DAMPING, 0.1f);
-  hlMaterialf(HL_FRONT_AND_BACK, HL_STATIC_FRICTION, 0.2f);
-  hlMaterialf(HL_FRONT_AND_BACK, HL_DYNAMIC_FRICTION, 0.3f);
+  hlMaterialf(HL_FRONT_AND_BACK, HL_STIFFNESS, 1);
+  hlMaterialf(HL_FRONT_AND_BACK, HL_DAMPING, 0);
+  hlMaterialf(HL_FRONT_AND_BACK, HL_STATIC_FRICTION, 0);
+  hlMaterialf(HL_FRONT_AND_BACK, HL_DYNAMIC_FRICTION, 0);
   hlHintb(HL_SHAPE_DYNAMIC_SURFACE_CHANGE, HL_TRUE);
   
   hlTouchModel(HL_CONTACT);
@@ -803,15 +795,17 @@ void drawSceneHaptics()
 
   glPushMatrix();
 
+  float x = 4, y = x*0.75;//set haptic surface size at 4:3 ratios
+
   glBegin(GL_QUADS);
-    glTexCoord2f(0.0f, -1.0f);  //bottom left
-    glVertex3f(-8.35f, -6.5f, 0.0f);
-    glTexCoord2f(0.95f, -1.0f); //bottom right
-    glVertex3f(5.4f, -6.5f, 0.0f);
-    glTexCoord2f(0.95f, 0.0f);  //top right
-    glVertex3f(5.4f, 3.64f, 0.0f);
-    glTexCoord2f(0.0f, 0.0f);   //top left
-    glVertex3f(-8.35f, 3.64f, 0.0f);
+    glTexCoord2f(0,0);
+    glVertex2f(-x,-y);
+    glTexCoord2f(1,0);
+    glVertex2f( x,-y);
+    glTexCoord2f(1,1);
+    glVertex2f( x, y);
+    glTexCoord2f(0,1);
+    glVertex2f(-x, y);
   glEnd();
 
   glPopMatrix();
